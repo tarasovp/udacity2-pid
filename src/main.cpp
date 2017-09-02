@@ -3,6 +3,13 @@
 #include "json.hpp"
 #include "PID.h"
 #include <math.h>
+#include "fstream"
+#include <ctime>
+
+
+#define cnt_per_iter 500
+#define tweedle 0
+
 
 // for convenience
 using json = nlohmann::json;
@@ -11,6 +18,23 @@ using json = nlohmann::json;
 constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
+
+int interation=1;
+int iteration_no_update;
+double throttle=0.3;
+double best_error = 999999;
+
+std::string now( const char* format = "%c" )
+{
+    std::time_t t = std::time(0) ;
+    char cstr[128] ;
+    std::strftime( cstr, sizeof(cstr), format, std::localtime(&t) ) ;
+    return cstr ;
+}
+
+std::ofstream logfile("logfile_" + now( "%Y_%m_%d_%H:%M:%S.txt"));
+std::ofstream pidlogfile("pidlogfile_" + now( "%Y_%m_%d_%H:%M:%S.txt"));
+
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
@@ -34,7 +58,10 @@ int main()
 
   PID pid;
   // TODO: Initialize the pid variable.
-
+   pid.Init(0.5, 0.0001, 5.0);
+    
+    
+  
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -50,22 +77,80 @@ int main()
           double cte = std::stod(j[1]["cte"].get<std::string>());
           double speed = std::stod(j[1]["speed"].get<std::string>());
           double angle = std::stod(j[1]["steering_angle"].get<std::string>());
-          double steer_value;
-          /*
-          * TODO: Calcuate steering value here, remember the steering value is
-          * [-1, 1].
-          * NOTE: Feel free to play around with the throttle and speed. Maybe use
-          * another PID controller to control the speed!
-          */
+          double steer_value=pid.Steering(cte);
           
-          // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
+            interation++;
+            if (steer_value>1) steer_value=1;
+            if (steer_value<-1) steer_value=-1;
+          
+            
+          //twiddle
+          if (interation==1 && tweedle)
+          {
+              std::cout <<"Iteration " <<0  <<
+              " PID=" << pid.KPID << " dkPID=" << pid.dKPID << std::endl;
+          }
+            
+          if (tweedle && interation%cnt_per_iter==0)
+          {
+              double error=pid.TotalError();
+              
+              
+              
+              
+                  std::cout <<"Iteration " <<(interation/cnt_per_iter) <<
+                  " Error " << error << " Best error" << pid.best_error << std::endl <<
+                  " PID=[" << pid.KPID[0] << " " << pid.KPID[1] << " " << pid.KPID[2] << " "
+                  << "] dkPID=[" << pid.dKPID[0] << " " << pid.dKPID[1] << " "
+                  << pid.dKPID[2] << "]"<< std::endl;
+              
+              
+              
+              json pidJson;
+              pidJson["Iteration"] = interation/cnt_per_iter;
+              pidJson["error"] = error;
+              pidJson["p"]=pid.KPID[0];
+              pidJson["i"]=pid.KPID[1];
+              pidJson["d"]=pid.KPID[2];
+              pidJson["dp"]=pid.dKPID[0];
+              pidJson["di"]=pid.dKPID[1];
+              pidJson["dd"]=pid.dKPID[2];
+              pidJson["throttle"]=throttle;
+              pidJson["best_error"]=pid.best_error;
+              pidlogfile << pidJson.dump() << std::endl;
 
+              pid.twiddle();
+              
+          }
+            
+            //if (interation%(cnt_per_iter*30)==0 && throttle<1) throttle+=0.1;
+          
+         
+          json logJson;
+          logJson["steering_angle"] = steer_value;
+          logJson["throttle"] = throttle;
+          logJson["speed"]=speed;
+          logJson["cte"]=cte;
+          logJson["angle"]=angle;
+          logJson["diffcte"]=pid.diff_cte;
+          logJson["iteration"]=interation;
+          logJson["total_error"]=pid.int_cte;
+        
+          logfile << logJson.dump() << std::endl;
+            
+            
           json msgJson;
           msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
+            
+        //for trottle
+        double tr=throttle;
+        if (fabs(cte)>0.5) tr=0.3;
+            
+            
+            
+          msgJson["throttle"] = tr;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          //std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
