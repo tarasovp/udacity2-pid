@@ -15,3 +15,5 @@
 # Describe how the final hyperparameters were chosen.
 
 First I've chosed parametrs manualy, than used twiddle. The goal was to use twiddle and obtain coefficients for larger trottle, but I gived up because it takes to much time) For this I've made running similator using ipynb and the idea was to find coefficients for 0.3, then using in for 0.4 find there etc. For details please see train.ipynb
+
+# Video - please see best.mov . Best p for throttle = 0.3 is 0.3224544990939262, 0.00013517627894290305, 7.069833065826603 
