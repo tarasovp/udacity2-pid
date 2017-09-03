@@ -1,5 +1,5 @@
-[image1]: ./images/p.png "P"
-[image2]: ./images/d.png "D"
+[image1]: ./p.png "P"
+[image2]: ./d.png "D"
 
 # Describe the effect each of the P, I, D components had in your implementation. 
 
