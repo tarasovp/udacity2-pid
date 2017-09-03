@@ -19,21 +19,23 @@ constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
-int interation=1;
+int interation = 1;
 int iteration_no_update;
-double throttle=0.3;
+double throttle = 0.3;
 double best_error = 999999;
+
+int max_iter = -1;
 
 std::string now( const char* format = "%c" )
 {
-    std::time_t t = std::time(0) ;
-    char cstr[128] ;
-    std::strftime( cstr, sizeof(cstr), format, std::localtime(&t) ) ;
-    return cstr ;
+  std::time_t t = std::time(0) ;
+  char cstr[128] ;
+  std::strftime( cstr, sizeof(cstr), format, std::localtime(&t) ) ;
+  return cstr ;
 }
 
 std::ofstream logfile("logfile_" + now( "%Y_%m_%d_%H:%M:%S.txt"));
-std::ofstream pidlogfile("pidlogfile_" + now( "%Y_%m_%d_%H:%M:%S.txt"));
+//std::ofstream pidlogfile("pidlogfile_" + now( "%Y_%m_%d_%H:%M:%S.txt"));
 
 
 // Checks if the SocketIO event has JSON data.
@@ -52,16 +54,32 @@ std::string hasData(std::string s) {
   return "";
 }
 
-int main()
+int main(int argc, char *argv[])
 {
   uWS::Hub h;
+  double p = 0.13, i = 0.0001, d = 4;
+
+  if (argc > 1)
+  {
+    p = atof(argv[1]);
+    i = atof(argv[2]);
+    d = atof(argv[3]);
+
+    throttle = atof(argv[4]);
+    max_iter = atof(argv[5]);
+
+
+  }
+
+  std::cout << "p=" << p << " i=" << i << "d=" << d << std::endl;
+
 
   PID pid;
   // TODO: Initialize the pid variable.
-   pid.Init(0.5, 0.0001, 5.0);
-    
-    
-  
+  pid.Init(p, i, d);
+
+
+
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -77,77 +95,47 @@ int main()
           double cte = std::stod(j[1]["cte"].get<std::string>());
           double speed = std::stod(j[1]["speed"].get<std::string>());
           double angle = std::stod(j[1]["steering_angle"].get<std::string>());
-          double steer_value=pid.Steering(cte);
-          
-            interation++;
-            if (steer_value>1) steer_value=1;
-            if (steer_value<-1) steer_value=-1;
-          
-            
-          //twiddle
-          if (interation==1 && tweedle)
-          {
-              std::cout <<"Iteration " <<0  <<
-              " PID=" << pid.KPID << " dkPID=" << pid.dKPID << std::endl;
-          }
-            
-          if (tweedle && interation%cnt_per_iter==0)
-          {
-              double error=pid.TotalError();
-              
-              
-              
-              
-                  std::cout <<"Iteration " <<(interation/cnt_per_iter) <<
-                  " Error " << error << " Best error" << pid.best_error << std::endl <<
-                  " PID=[" << pid.KPID[0] << " " << pid.KPID[1] << " " << pid.KPID[2] << " "
-                  << "] dkPID=[" << pid.dKPID[0] << " " << pid.dKPID[1] << " "
-                  << pid.dKPID[2] << "]"<< std::endl;
-              
-              
-              
-              json pidJson;
-              pidJson["Iteration"] = interation/cnt_per_iter;
-              pidJson["error"] = error;
-              pidJson["p"]=pid.KPID[0];
-              pidJson["i"]=pid.KPID[1];
-              pidJson["d"]=pid.KPID[2];
-              pidJson["dp"]=pid.dKPID[0];
-              pidJson["di"]=pid.dKPID[1];
-              pidJson["dd"]=pid.dKPID[2];
-              pidJson["throttle"]=throttle;
-              pidJson["best_error"]=pid.best_error;
-              pidlogfile << pidJson.dump() << std::endl;
+          double steer_value = pid.Steering(cte);
 
-              pid.twiddle();
-              
+          interation++;
+          if (steer_value > 1) steer_value = 1;
+          if (steer_value < -1) steer_value = -1;
+
+
+          //twiddle
+          if (interation == 1 && tweedle)
+          {
+            std::cout << "Iteration " << 0  <<
+                      " PID=" << pid.KPID << " dkPID=" << pid.dKPID << std::endl;
           }
-            
-            //if (interation%(cnt_per_iter*30)==0 && throttle<1) throttle+=0.1;
-          
-         
+
+
           json logJson;
           logJson["steering_angle"] = steer_value;
           logJson["throttle"] = throttle;
-          logJson["speed"]=speed;
-          logJson["cte"]=cte;
-          logJson["angle"]=angle;
-          logJson["diffcte"]=pid.diff_cte;
-          logJson["iteration"]=interation;
-          logJson["total_error"]=pid.int_cte;
-        
+          logJson["speed"] = speed;
+          logJson["cte"] = cte;
+          logJson["angle"] = angle;
+          logJson["diffcte"] = pid.diff_cte;
+          logJson["iteration"] = interation;
+          logJson["total_error"] = pid.int_cte;
+
           logfile << logJson.dump() << std::endl;
-            
-            
+
+
           json msgJson;
           msgJson["steering_angle"] = steer_value;
-            
-        //for trottle
-        double tr=throttle;
-        if (fabs(cte)>0.5) tr=0.3;
-            
-            
-            
+
+          //for trottle
+          double tr = throttle;
+          //if (fabs(cte)>0.5) tr=0.1;
+
+          //max_iteration
+          if (max_iter > 0 && interation > max_iter) {
+            std::cout << "max itreations!";
+            exit (0);
+          }
+
           msgJson["throttle"] = tr;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           //std::cout << msg << std::endl;
@@ -163,7 +151,7 @@ int main()
 
   // We don't need this since we're not using HTTP but if it's removed the program
   // doesn't compile :-(
-  h.onHttpRequest([](uWS::HttpResponse *res, uWS::HttpRequest req, char *data, size_t, size_t) {
+  h.onHttpRequest([](uWS::HttpResponse * res, uWS::HttpRequest req, char *data, size_t, size_t) {
     const std::string s = "<h1>Hello world!</h1>";
     if (req.getUrl().valueLength == 1)
     {
